@@ -1,0 +1,21 @@
+{
+  "name": "fetch-worker",
+  "version": "0.0.1",
+  "description": "a component of vtuberstats.io",
+  "author": "darkyzhou",
+  "private": true,
+  "license": "Apache-2.0",
+  "scripts": {
+    "dev": "devspace dev",
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "dotenv": "^8.2.0",
+    "googleapis": "^66.0.0",
+    "kafkajs": "^1.15.0",
+    "p-queue": "^6.6.2"
+  },
+  "devDependencies": {
+    "prettier": "^2.2.1"
+  }
+}

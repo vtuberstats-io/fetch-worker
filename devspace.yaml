@@ -1,0 +1,52 @@
+version: v1beta9
+images:
+  app:
+    image: devspace
+    preferSyncOverRebuild: true
+    injectRestartHelper: true
+    appendDockerfileInstructions:
+    - USER root
+    build:
+      docker:
+        skipPush: true
+deployments:
+- name: fetch-worker
+  helm:
+    componentChart: true
+    values:
+      containers:
+      - image: devspace
+      service:
+        ports:
+        - port: 9229
+dev:
+  open:
+  - url: http://localhost:9229
+  sync:
+  - imageName: app
+    excludePaths:
+    - .git/
+    uploadExcludePaths:
+    - Dockerfile
+    - node_modules/
+    - devspace.yaml
+    onUpload:
+      restartContainer: true
+profiles:
+- name: production
+  patches:
+  - op: remove
+    path: images.app.injectRestartHelper
+  - op: remove
+    path: images.app.appendDockerfileInstructions
+- name: interactive
+  patches:
+  - op: add
+    path: dev.interactive
+    value:
+      defaultEnabled: true
+  - op: add
+    path: images.app.entrypoint
+    value:
+    - sleep
+    - "9999999999"
