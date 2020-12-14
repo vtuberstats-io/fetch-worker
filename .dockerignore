@@ -5,6 +5,8 @@ Dockerfile
 
 node_modules/
 
+# .env is for devspace only
+.env
 
 # Ignore devspace.yaml file to prevent image rebuilding after config changes
 devspace.yaml

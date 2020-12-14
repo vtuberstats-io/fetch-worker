@@ -10,7 +10,6 @@
     "start": "node index.js"
   },
   "dependencies": {
-    "dotenv": "^8.2.0",
     "googleapis": "^66.0.0",
     "kafkajs": "^1.15.0",
     "p-queue": "^6.6.2"
