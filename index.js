@@ -39,12 +39,12 @@ let taskResultsJson = [];
 async function init() {
   setInterval(() => pushFinishedTasksToKafka(), 1000 * 60);
 
-  console.info(`connecting to kafka with brokers: ${KAFKA_BROKERS}`);
+  console.info('connecting to kafka brokers');
   await fetchTaskResultProducer.connect();
   await fetchTaskScheduleConsumer.connect();
   await fetchTaskScheduleConsumer.subscribe({ topic: TOPIC_FETCH_TASK_SCHEDULE });
 
-  console.info('start reading scheduled tasks')
+  console.info('start reading scheduled tasks');
   await doReadTaskFromKafka();
 }
 
