@@ -1,5 +1,5 @@
 {
-  "name": "fetch-worker",
+  "name": "channel-worker",
   "version": "0.0.1",
   "description": "a component of vtuberstats.io",
   "author": "darkyzhou",

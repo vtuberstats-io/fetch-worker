@@ -15,7 +15,7 @@ images:
       docker:
         skipPush: true
 deployments:
-  - name: fetch-worker
+  - name: channel-worker
     helm:
       componentChart: true
       values:

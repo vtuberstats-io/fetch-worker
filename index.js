@@ -21,7 +21,7 @@ const kafka = new Kafka({
   clientId: HOSTNAME,
   brokers: KAFKA_BROKERS.trim().split(',')
 });
-const fetchTaskScheduleConsumer = kafka.consumer({ groupId: 'fetch-worker' });
+const fetchTaskScheduleConsumer = kafka.consumer({ groupId: 'channel-worker' });
 const fetchTaskResultProducer = kafka.producer();
 const fetchTaskQueue = new AutoRetryQueue(CONCURRENCY, MAX_RETRY);
 let taskResultsJson = [];
@@ -38,7 +38,10 @@ async function init() {
   await doReadTaskFromKafka();
 }
 
-init().catch((err) => console.error(err));
+init().catch((e) => {
+  console.error(`fatal error: ${e.stack}`);
+  process.exit(1);
+});
 
 async function doReadTaskFromKafka() {
   await fetchTaskScheduleConsumer.run({
