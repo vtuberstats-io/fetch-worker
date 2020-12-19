@@ -1,21 +1,11 @@
-'use strict';
-
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
 const KAFKA_BROKERS = process.env.KAFKA_BROKERS;
 const CONCURRENCY = Number(process.env.CONCURRENCY) || 8;
 const MAX_RETRY = Number(process.env.MAX_RETRY) || 3;
 const HOSTNAME = process.env.HOSTNAME; // offered by kubernetes automatically
 
-if (!YOUTUBE_API_KEY) {
-  console.error('environment variable YOUTUBE_API_KEY is not specified!');
-  process.exit(1);
-}
-if (!KAFKA_BROKERS) {
-  console.error('environment variable KAFKA_BROKERS is not specified!');
-  process.exit(1);
-}
-if (!HOSTNAME) {
-  console.error('environment variable HOSTNAME is not specified!');
+if (!YOUTUBE_API_KEY || !KAFKA_BROKERS || !HOSTNAME) {
+  console.error(`missing environment variables, env: ${JSON.stringify(process.env)}`);
   process.exit(1);
 }
 
