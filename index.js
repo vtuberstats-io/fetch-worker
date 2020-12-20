@@ -12,7 +12,7 @@ if (!YOUTUBE_API_KEY || !KAFKA_BROKERS || !HOSTNAME) {
 const { registerExitHook } = require('./lib/exit-hook');
 const { google } = require('googleapis');
 const { Kafka } = require('kafkajs');
-const AutoRetryQueue = require('./lib/queue');
+const { withRetry } = require('./lib/with-retry');
 const { fetchYoutubeChannelInfo } = require('./lib/fetch-youtube-channel');
 const { fetchBilibiliChannelInfo } = require('./lib/fetch-bilibili-channel');
 
@@ -41,31 +41,30 @@ async function init() {
 
   console.info('start reading scheduled tasks');
   await fetchTaskScheduleConsumer.run({
-    eachMessage: async ({ message }) => doFetchTask(JSON.parse(message.value.toString()))
+    eachMessage: async ({ message }) => {
+      const task = JSON.parse(message.value.toString());
+      await withRetry(
+        async () => {
+          taskResultsJson.push(
+            JSON.stringify({
+              meta: task,
+              data:
+                task.domain === 'youtube'
+                  ? await fetchYoutubeChannelInfo(youtubeApi, task.channelId)
+                  : await fetchBilibiliChannelInfo(task.channelId)
+            })
+          );
+        },
+        (e) =>
+          console.error(
+            `${task.domain} fetching task for '${task.id}(${task.channelId})' has failed for too many times(${MAX_RETRY}), latest error: ${e.stack}`
+          )
+      );
+    }
   });
 }
 
 init();
-
-function doFetchTask(task) {
-  fetchTaskQueue.enqueue(
-    async () => {
-      taskResultsJson.push(
-        JSON.stringify({
-          meta: task,
-          data:
-            task.domain === 'youtube'
-              ? await fetchYoutubeChannelInfo(youtubeApi, task.channelId)
-              : await fetchBilibiliChannelInfo(task.channelId)
-        })
-      );
-    },
-    (e) =>
-      console.error(
-        `${task.domain} fetching task for '${task.id}(${task.channelId})' has failed for too many times(${MAX_RETRY}), latest error: ${e.stack}`
-      )
-  );
-}
 
 async function pushFinishedTasksToKafka() {
   if (taskResultsJson.length <= 0) {
