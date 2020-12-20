@@ -17,7 +17,7 @@ const { fetchYoutubeChannelInfo } = require('./lib/fetch-youtube-channel');
 const { fetchBilibiliChannelInfo } = require('./lib/fetch-bilibili-channel');
 
 const TOPIC_FETCH_CHANNEL_INFO = 'fetch-channel-info';
-const TOPIC_FETCH_DONE = 'fetch-done';
+const TOPIC_CHANNEL_INFO = 'channel-info';
 
 const youtubeApi = google.youtube({ version: 'v3', auth: YOUTUBE_API_KEY });
 const kafka = new Kafka({
@@ -34,7 +34,9 @@ async function init() {
 
   console.info('connecting to kafka brokers');
   await fetchTaskResultProducer.connect();
+  registerExitHook(async () => await fetchTaskResultProducer.disconnect());
   await fetchTaskScheduleConsumer.connect();
+  registerExitHook(async () => await fetchTaskScheduleConsumer.disconnect());
   await fetchTaskScheduleConsumer.subscribe({ topic: TOPIC_FETCH_CHANNEL_INFO });
 
   console.info('start reading scheduled tasks');
@@ -43,15 +45,6 @@ async function init() {
   });
 }
 
-registerExitHook(
-  async () => {
-    await fetchTaskScheduleConsumer.disconnect();
-  },
-  async () => {
-    await fetchTaskResultProducer.disconnect();
-  }
-);
-
 init();
 
 function doFetchTask(task) {
@@ -59,7 +52,7 @@ function doFetchTask(task) {
     async () => {
       taskResultsJson.push(
         JSON.stringify({
-          ...task,
+          meta: task,
           data:
             task.domain === 'youtube'
               ? await fetchYoutubeChannelInfo(youtubeApi, task.channelId)
@@ -83,7 +76,7 @@ async function pushFinishedTasksToKafka() {
   try {
     await fetchTaskResultProducer.send({
       acks: -1,
-      topic: TOPIC_FETCH_DONE,
+      topic: TOPIC_CHANNEL_INFO,
       messages: results.map((r) => ({ value: r }))
     });
     console.info(`pushed ${results.length} task results to kafka`);
