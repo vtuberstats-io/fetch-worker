@@ -16,8 +16,8 @@ const AutoRetryQueue = require('./lib/queue');
 const { fetchYoutubeChannelInfo } = require('./lib/fetch-youtube-channel');
 const { fetchBilibiliChannelInfo } = require('./lib/fetch-bilibili-channel');
 
-const TOPIC_FETCH_TASK_SCHEDULE = 'fetch-task-schedule';
-const TOPIC_FETCH_TASK_DONE = 'fetch-task-done';
+const TOPIC_FETCH_CHANNEL_INFO = 'fetch-channel-info';
+const TOPIC_FETCH_DONE = 'fetch-done';
 
 const youtubeApi = google.youtube({ version: 'v3', auth: YOUTUBE_API_KEY });
 const kafka = new Kafka({
@@ -35,10 +35,12 @@ async function init() {
   console.info('connecting to kafka brokers');
   await fetchTaskResultProducer.connect();
   await fetchTaskScheduleConsumer.connect();
-  await fetchTaskScheduleConsumer.subscribe({ topic: TOPIC_FETCH_TASK_SCHEDULE });
+  await fetchTaskScheduleConsumer.subscribe({ topic: TOPIC_FETCH_CHANNEL_INFO });
 
   console.info('start reading scheduled tasks');
-  await doReadTaskFromKafka();
+  await fetchTaskScheduleConsumer.run({
+    eachMessage: async ({ message }) => doFetchTask(JSON.parse(message.value.toString()))
+  });
 }
 
 registerExitHook(
@@ -52,46 +54,22 @@ registerExitHook(
 
 init();
 
-async function doReadTaskFromKafka() {
-  await fetchTaskScheduleConsumer.run({
-    eachMessage: async ({ message }) => {
-      const task = JSON.parse(message.value.toString());
-      let hit = false;
-      if (task.vtuberMeta.youtubeChannelId) {
-        hit = true;
-        console.info(`queued youtube fetching task '${message.value.toString()}'`);
-        doFetchTask(task, 'youtube');
-      }
-      if (task.vtuberMeta.bilibiliChannelId) {
-        hit = true;
-        console.info(`queued bilibili fetching task '${message.value.toString()}'`);
-        doFetchTask(task, 'bilibili');
-      }
-      if (!hit) {
-        console.warn(`task '${message.value.toString()}' has no valid channel ids, skipping`);
-      }
-    }
-  });
-}
-
-function doFetchTask(task, type) {
+function doFetchTask(task) {
   fetchTaskQueue.enqueue(
     async () => {
       taskResultsJson.push(
         JSON.stringify({
-          scheduledTimestamp: task.scheduledTimestamp,
-          type,
-          vtuberId: task.vtuberMeta.vtuberId,
+          ...task,
           data:
-            type === 'youtube'
-              ? await fetchYoutubeChannelInfo(youtubeApi, task.vtuberMeta.youtubeChannelId)
-              : await fetchBilibiliChannelInfo(task.vtuberMeta.bilibiliChannelId)
+            task.domain === 'youtube'
+              ? await fetchYoutubeChannelInfo(youtubeApi, task.channelId)
+              : await fetchBilibiliChannelInfo(task.channelId)
         })
       );
     },
     (e) =>
       console.error(
-        `${type} fetching task for '${task.vtuberMeta.vtuberId}' has failed for too many times(${MAX_RETRY}), latest error: ${e.stack}`
+        `${task.domain} fetching task for '${task.id}(${task.channelId})' has failed for too many times(${MAX_RETRY}), latest error: ${e.stack}`
       )
   );
 }
@@ -105,7 +83,7 @@ async function pushFinishedTasksToKafka() {
   try {
     await fetchTaskResultProducer.send({
       acks: -1,
-      topic: TOPIC_FETCH_TASK_DONE,
+      topic: TOPIC_FETCH_DONE,
       messages: results.map((r) => ({ value: r }))
     });
     console.info(`pushed ${results.length} task results to kafka`);
