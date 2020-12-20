@@ -47,9 +47,6 @@ registerExitHook(
   },
   async () => {
     await fetchTaskResultProducer.disconnect();
-  },
-  async () => {
-    await fetchTaskResultProducer.disconnect();
   }
 );
 
