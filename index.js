@@ -9,7 +9,7 @@ if (!YOUTUBE_API_KEY || !KAFKA_BROKERS || !HOSTNAME) {
   process.exit(1);
 }
 
-const { registerExitHook } = require('./lib/exit-hook');
+const { addExitHook, registerExitListener } = require('./lib/exit-hook');
 const { google } = require('googleapis');
 const { Kafka } = require('kafkajs');
 const { withRetry } = require('./lib/with-retry');
@@ -26,7 +26,6 @@ const kafka = new Kafka({
 });
 const fetchTaskScheduleConsumer = kafka.consumer({ groupId: 'channel-worker' });
 const fetchTaskResultProducer = kafka.producer();
-const fetchTaskQueue = new AutoRetryQueue(CONCURRENCY, MAX_RETRY);
 let taskResultsJson = [];
 
 async function init() {
@@ -34,9 +33,9 @@ async function init() {
 
   console.info('connecting to kafka brokers');
   await fetchTaskResultProducer.connect();
-  registerExitHook(async () => await fetchTaskResultProducer.disconnect());
+  addExitHook(async () => await fetchTaskResultProducer.disconnect());
   await fetchTaskScheduleConsumer.connect();
-  registerExitHook(async () => await fetchTaskScheduleConsumer.disconnect());
+  addExitHook(async () => await fetchTaskScheduleConsumer.disconnect());
   await fetchTaskScheduleConsumer.subscribe({ topic: TOPIC_FETCH_CHANNEL_INFO });
 
   console.info('start reading scheduled tasks');
@@ -64,6 +63,7 @@ async function init() {
   });
 }
 
+registerExitListener();
 init();
 
 async function pushFinishedTasksToKafka() {
