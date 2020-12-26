@@ -1,5 +1,5 @@
 {
-  "name": "channel-worker",
+  "name": "fetch-worker",
   "version": "0.0.1",
   "description": "a component of vtuberstats.io",
   "author": "darkyzhou",
@@ -10,6 +10,7 @@
     "start": "node index.js"
   },
   "dependencies": {
+    "exit-hook-plus": "^0.1.0",
     "googleapis": "^66.0.0",
     "kafkajs": "^1.15.0"
   },

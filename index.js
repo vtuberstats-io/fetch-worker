@@ -1,7 +1,5 @@
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
 const KAFKA_BROKERS = process.env.KAFKA_BROKERS;
-const CONCURRENCY = Number(process.env.CONCURRENCY) || 8;
-const MAX_RETRY = Number(process.env.MAX_RETRY) || 3;
 const HOSTNAME = process.env.HOSTNAME; // offered by kubernetes automatically
 
 if (!YOUTUBE_API_KEY || !KAFKA_BROKERS || !HOSTNAME) {
@@ -9,81 +7,85 @@ if (!YOUTUBE_API_KEY || !KAFKA_BROKERS || !HOSTNAME) {
   process.exit(1);
 }
 
-const { addExitHook, registerExitListener } = require('./lib/exit-hook');
+const { addExitHook } = require('exit-hook-plus');
 const { google } = require('googleapis');
 const { Kafka } = require('kafkajs');
-const { withRetry } = require('./lib/with-retry');
 const { fetchYoutubeChannelInfo } = require('./lib/fetch-youtube-channel');
-const { fetchBilibiliChannelInfo } = require('./lib/fetch-bilibili-channel');
-
-const TOPIC_FETCH_CHANNEL_INFO = 'fetch-channel-info';
-const TOPIC_CHANNEL_INFO = 'channel-info';
+const { fetchYoutubeVideoInfo } = require('./lib/fetch-youtube-video');
 
 const youtubeApi = google.youtube({ version: 'v3', auth: YOUTUBE_API_KEY });
 const kafka = new Kafka({
   clientId: HOSTNAME,
   brokers: KAFKA_BROKERS.trim().split(',')
 });
-const fetchTaskScheduleConsumer = kafka.consumer({ groupId: 'channel-worker' });
-const fetchTaskResultProducer = kafka.producer();
-let taskResultsJson = [];
+const consumber = kafka.consumer({ groupId: 'fetch-worker' });
+const producer = kafka.producer();
+
+const CONSUME_TOPICS = ['fetch-channel-info', 'fetch-video-info'];
 
 async function init() {
-  setInterval(() => pushFinishedTasksToKafka(), 1000 * 60);
-
   console.info('connecting to kafka brokers');
-  await fetchTaskResultProducer.connect();
-  addExitHook(async () => await fetchTaskResultProducer.disconnect());
-  await fetchTaskScheduleConsumer.connect();
-  addExitHook(async () => await fetchTaskScheduleConsumer.disconnect());
-  await fetchTaskScheduleConsumer.subscribe({ topic: TOPIC_FETCH_CHANNEL_INFO });
+  await producer.connect();
+  addExitHook(async () => await producer.disconnect());
+  await consumber.connect();
+  addExitHook(async () => await consumber.disconnect());
+  for (const topic of CONSUME_TOPICS) {
+    await consumber.subscribe({ topic });
+  }
 
-  console.info('start reading scheduled tasks');
-  await fetchTaskScheduleConsumer.run({
-    eachMessage: async ({ message }) => {
-      const task = JSON.parse(message.value.toString());
-      await withRetry(
-        async () => {
-          taskResultsJson.push(
-            JSON.stringify({
-              meta: task,
-              data:
-                task.domain === 'youtube'
-                  ? await fetchYoutubeChannelInfo(youtubeApi, task.channelId)
-                  : await fetchBilibiliChannelInfo(task.channelId)
-            })
-          );
-        },
-        (e) =>
-          console.error(
-            `${task.domain} fetching task for '${task.id}(${task.channelId})' has failed for too many times(${MAX_RETRY}), latest error: ${e.stack}`
-          )
-      );
+  console.info('start reading messages from kafka');
+  await consumber.run({
+    eachMessage: async ({ topic, message }) => {
+      try {
+        const value = JSON.parse(message.value.toString());
+        switch (topic) {
+          case 'fetch-channel-info':
+            await handleFetchChannelInfoTask(value);
+            break;
+          case 'fetch-video-info':
+            await handleFetchVideoInfoTask(value);
+            break;
+          default:
+            console.warn(
+              `ignoring unknown topic '${topic}' for message '${message.value.toString()}'`
+            );
+        }
+      } catch (e) {
+        console.error(`error while processing task '${message.value.toString()}'`);
+        throw e;
+      }
     }
   });
 }
 
-registerExitListener();
 init();
 
-async function pushFinishedTasksToKafka() {
-  if (taskResultsJson.length <= 0) {
-    return;
-  }
-  const results = [...taskResultsJson];
-  taskResultsJson = [];
-  try {
-    await fetchTaskResultProducer.send({
-      acks: -1,
-      topic: TOPIC_CHANNEL_INFO,
-      messages: results.map((r) => ({ value: r }))
-    });
-    console.info(`pushed ${results.length} task results to kafka`);
-  } catch (e) {
-    taskResultsJson = [...taskResultsJson, ...results];
-    console.error(
-      `failed to push ${results.length} task results to kafka, will retry in the next run`
-    );
-    console.error(e.stack);
-  }
+async function handleFetchChannelInfoTask(task) {
+  await producer.send({
+    acks: 0,
+    topic: 'channel-info',
+    messages: [
+      {
+        value: JSON.stringify({
+          meta: task,
+          data: await fetchYoutubeChannelInfo(youtubeApi, task.channelId)
+        })
+      }
+    ]
+  });
+}
+
+async function handleFetchVideoInfoTask(task) {
+  await producer.send({
+    acks: 0,
+    topic: 'video-info',
+    messages: [
+      {
+        value: JSON.stringify({
+          meta: task,
+          data: await fetchYoutubeVideoInfo(youtubeApi, task.videoId) // TODO: bilibili
+        })
+      }
+    ]
+  });
 }
